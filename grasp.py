@@ -1,87 +1,83 @@
 import tsplib95
-import math
 import random
+from math import sqrt
 
 def lerCoordenadas(arquivo):
     problema = tsplib95.load(arquivo)
-    coordenadas_pontos = {node: coord for node, coord in problema.node_coords.items()}
+    coordenadas_pontos = problema.node_coords
     return coordenadas_pontos
 
-def construcaoGulosaRandomica(LRC):
-    LC = set(LRC)
-    solucao = []
-    while LC:
-        lrc = list(LC)
-        selecionado = random.choice(lrc)
-        solucao.append(selecionado)
-        LC.remove(selecionado)
-    return solucao
-
 def calcularDistancia(ponto1, ponto2):
-    x1, y1 = ponto1
-    x2, y2 = ponto2
-    return math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
+    return sqrt((ponto1[0] - ponto2[0]) ** 2 + (ponto1[1] - ponto2[1]) ** 2)
 
 def calcularQualidade(solucao, coordenadas_pontos):
-    distancia_total = 0
-    for i in range(len(solucao) - 1):
-        ponto_atual = coordenadas_pontos[solucao[i]]
-        proximo_ponto = coordenadas_pontos[solucao[i + 1]]
-        distancia = calcularDistancia(ponto_atual, proximo_ponto)
-        distancia_total += distancia
-    ponto_inicio = coordenadas_pontos[solucao[0]]
-    ponto_fim = coordenadas_pontos[solucao[-1]]
-    distancia_retorno = calcularDistancia(ponto_fim, ponto_inicio)
-    distancia_total += distancia_retorno
-    return -distancia_total  
+    distancia_total = sum(
+        calcularDistancia(coordenadas_pontos[solucao[i]], coordenadas_pontos[solucao[i + 1]])
+        for i in range(len(solucao) - 1)
+    )
+    distancia_total += calcularDistancia(coordenadas_pontos[solucao[-1]], coordenadas_pontos[solucao[0]])
+    return -distancia_total
+
+def construcaoGulosaRandomica(LRC, coordenadas_pontos, alpha=0.1):
+    LC = set(LRC)
+    solucao = []
+    ponto_atual = random.choice(list(LC))
+    solucao.append(ponto_atual)
+    LC.remove(ponto_atual)
+    while LC:
+        distancias = [(ponto, calcularDistancia(coordenadas_pontos[ponto_atual], coordenadas_pontos[ponto])) for ponto in LC]
+        distancias.sort(key=lambda x: x[1])
+        limite = distancias[0][1] + alpha * (distancias[-1][1] - distancias[0][1])
+        lrc = [ponto for ponto, distancia in distancias if distancia <= limite]
+        proximo_ponto = random.choice(lrc)
+        solucao.append(proximo_ponto)
+        LC.remove(proximo_ponto)
+        ponto_atual = proximo_ponto
+    return solucao
 
 def Vizinhaca(solucao):
     vizinhaca = []
     for i in range(len(solucao)):
         for j in range(i + 1, len(solucao)):
-            vizinha = solucao[:]
-            vizinha[i], vizinha[j] = vizinha[j], vizinha[i]
-            vizinhaca.append(vizinha)
+            nova_solucao = solucao[:]
+            nova_solucao[i], nova_solucao[j] = nova_solucao[j], nova_solucao[i]
+            vizinhaca.append(nova_solucao)
+    for i in range(len(solucao) - 1):
+        for j in range(i + 2, len(solucao)):
+            nova_solucao = solucao[:]
+            nova_solucao[i:j+1] = reversed(solucao[i:j+1])
+            vizinhaca.append(nova_solucao)
     return vizinhaca
 
 def buscaLocal(solucao, coordenadas_pontos):
-    solucao_atual = solucao
     while True:
-        melhor_solucao = None
-        melhor_qualidade = calcularQualidade(solucao_atual, coordenadas_pontos)
-        vizinhaca = Vizinhaca(solucao_atual)
-        for vizinha in vizinhaca:
-            qualidade_vizinha = calcularQualidade(vizinha, coordenadas_pontos)
-            if qualidade_vizinha > melhor_qualidade:
-                melhor_solucao = vizinha
-                melhor_qualidade = qualidade_vizinha
-        if melhor_solucao is None:
+        vizinhaca = Vizinhaca(solucao)
+        melhor_vizinha = max(vizinhaca, key=lambda vizinha: calcularQualidade(vizinha, coordenadas_pontos), default=None)
+        if melhor_vizinha and calcularQualidade(melhor_vizinha, coordenadas_pontos) > calcularQualidade(solucao, coordenadas_pontos):
+            solucao = melhor_vizinha
+        else:
             break
-        solucao_atual = melhor_solucao
-    return solucao_atual
+    return solucao
 
-def atualizarSolucao(solucao, melhorSolucao, coordenadas_pontos):
-    if melhorSolucao is None:
-        return solucao
-    return solucao if calcularQualidade(solucao, coordenadas_pontos) > calcularQualidade(melhorSolucao, coordenadas_pontos) else melhorSolucao
-
-def GRASP(maxInteracoes, LRC, coordenadas_pontos):
+def GRASP(maxInteracoes, LRC, coordenadas_pontos, alpha=0.1):
     melhorSolucao = None
     for _ in range(maxInteracoes):
-        solucao = construcaoGulosaRandomica(LRC)
+        solucao = construcaoGulosaRandomica(LRC, coordenadas_pontos, alpha)
         solucao = buscaLocal(solucao, coordenadas_pontos)
-        melhorSolucao = atualizarSolucao(solucao, melhorSolucao, coordenadas_pontos)
+        if melhorSolucao is None or calcularQualidade(solucao, coordenadas_pontos) > calcularQualidade(melhorSolucao, coordenadas_pontos):
+            melhorSolucao = solucao
     return melhorSolucao
 
 def main():
     arquivo = 'Caixeiro-Viajante/berlin52.tsp'
     coordenadas_pontos = lerCoordenadas(arquivo)
     LRC = list(coordenadas_pontos.keys())
-    maxInteracoes = 100  
-    melhorSolucao = GRASP(maxInteracoes, LRC, coordenadas_pontos)
+    maxInteracoes = 100
+    alpha = 0.1
+    melhorSolucao = GRASP(maxInteracoes, LRC, coordenadas_pontos, alpha)
     if melhorSolucao:
         distancia_total = -calcularQualidade(melhorSolucao, coordenadas_pontos)
-        print(f"\nMelhor Solucao:\n {melhorSolucao} \nDistância Total: {distancia_total}")
+        print(f"\nMelhor Solução:\n {melhorSolucao} \nDistância Total: {distancia_total}")
     else:
         print("Nenhuma solução encontrada.")
 
